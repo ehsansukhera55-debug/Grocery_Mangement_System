@@ -1,0 +1,167 @@
+/* src/index.css */
+:root{
+  --sidebar-bg: #0f3b66;
+  --accent: #2f9cff;
+  --muted: #f4f7fb;
+  --card-bg: #ffffff;
+  --text: #1f2937;
+}
+
+* { box-sizing: border-box; }
+
+body, html, #root {
+  height: 100%;
+  margin: 0;
+  font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+  background: #f2f6fb;
+}
+
+.app {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 220px;
+  background: var(--sidebar-bg);
+  color: white;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  border-right: 1px solid rgba(255,255,255,0.04);
+}
+
+.logo {
+  font-weight: 700;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-item {
+  padding: 10px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  color: rgba(255,255,255,0.9);
+}
+
+.nav-item.active {
+  background: rgba(255,255,255,0.06);
+}
+
+.main-area {
+  flex: 1;
+  padding: 28px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.card {
+  background: var(--card-bg);
+  padding: 18px;
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(17,24,39,0.04);
+}
+
+.products-table {
+  background: var(--card-bg);
+  padding: 16px;
+  border-radius: 10px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th, .table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.search {
+  margin-bottom: 12px;
+}
+
+.right-panel {
+  width: 320px;
+  margin-left: 16px;
+}
+
+.layout {
+  display: flex;
+  gap: 16px;
+}
+
+.invoice {
+  background: var(--card-bg);
+  padding: 16px;
+  border-radius: 10px;
+}
+
+.btn {
+  background: var(--accent);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+}
+
+.btn.secondary {
+  background: #e6eefc;
+  color: var(--text);
+}
+
+/* ===============================================================
+   FIX: INPUTS STOP WORKING IN BUILT EXE (Electron drag issue)
+   =============================================================== */
+
+input,
+textarea,
+select,
+button,
+a,
+label,
+.no-drag {
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto !important;
+}
+
+/* Make sure all main UI areas allow typing/clicking */
+.app,
+.main-area,
+.card,
+.products-table,
+.invoice,
+.table,
+.search,
+.header,
+.layout,
+.right-panel {
+  -webkit-app-region: no-drag !important;
+}
+
+/* OPTIONAL: If you ever add a draggable area, keep only that draggable
+   Example:
+      .titlebar { -webkit-app-region: drag; }
+   and put .no-drag on buttons/inputs inside it.
+*/

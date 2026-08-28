@@ -1,0 +1,43 @@
+{
+  "name": "nirala-store",
+  "version": "1.0.0",
+  "description": "Nirala Store — A complete grocery store management system built with Electron and React.",
+  "main": "public/electron-main.js",
+  "scripts": {
+    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron ./public/electron-main.js\"",
+    "build:renderer": "vite build",
+    "build": "npm run build:renderer && electron-builder",
+    "start": "cross-env NODE_ENV=production electron ./public/electron-main.js"
+  },
+  "build": {
+    "appId": "com.niralastore.app",
+    "productName": "Nirala Store",
+    "directories": {
+      "buildResources": "assets",
+      "output": "dist_electron"
+    },
+    "files": [
+      "dist/**/*",
+      "public/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    }
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^9.2.1",
+    "cross-env": "^7.0.3",
+    "electron": "^38.3.0",
+    "electron-builder": "^26.0.12",
+    "electron-rebuild": "^3.2.9",
+    "vite": "^7.1.10",
+    "wait-on": "^9.0.1"
+  }
+}

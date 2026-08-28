@@ -1,0 +1,8 @@
+{
+  "files": [
+    "dist/",
+    "public/**/*",
+    "main.js",
+    "package.json"
+  ]
+}

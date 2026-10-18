@@ -15,10 +15,11 @@ function createWindow() {
     },
   });
 
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+  const isDev = Boolean(process.env.VITE_DEV_SERVER_URL) || !app.isPackaged;
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://127.0.0.1:5173';
   const prodIndex = path.join(__dirname, '../dist/index.html');
 
-  if (devServerUrl) {
+  if (isDev) {
     // 👉 Development mode (served by Vite)
     win.loadURL(devServerUrl);
     win.webContents.openDevTools();
@@ -58,15 +59,36 @@ ipcMain.handle('products:update', (_, product) => db.updateProduct(product));
 ipcMain.handle('products:delete', (_, id) => db.deleteProduct(id));
 
 // Customers
-ipcMain.handle('customers:get', () => db.getCustomers());
+ipcMain.handle('customers:get', (_, filter) => db.getCustomers(filter));
+ipcMain.handle('customers:getById', (_, id) => db.getCustomerById(id));
+ipcMain.handle('customers:getPurchases', (_, id) => db.getCustomerPurchases(id));
 ipcMain.handle('customers:add', (_, customer) => db.addCustomer(customer));
+ipcMain.handle('customers:update', (_, customer) => db.updateCustomer(customer));
+ipcMain.handle('customers:delete', (_, id) => db.deleteCustomer(id));
+ipcMain.handle('customers:toggleActive', (_, { id, isActive }) => db.toggleCustomerActive(id, isActive));
 
-// Sales / Purchases
+// Suppliers
+ipcMain.handle('suppliers:get', (_, filter) => db.getSuppliers(filter));
+ipcMain.handle('suppliers:getById', (_, id) => db.getSupplierById(id));
+ipcMain.handle('suppliers:getProducts', (_, id) => db.getSupplierProducts(id));
+ipcMain.handle('suppliers:add', (_, supplier) => db.addSupplier(supplier));
+ipcMain.handle('suppliers:update', (_, supplier) => db.updateSupplier(supplier));
+ipcMain.handle('suppliers:delete', (_, id) => db.deleteSupplier(id));
+ipcMain.handle('suppliers:toggleActive', (_, { id, isActive }) => db.toggleSupplierActive(id, isActive));
+
+// Sales
 ipcMain.handle('sales:add', (_, sale) => db.addSale(sale));
-ipcMain.handle('sales:get', (_, { start, end }) => db.getSales(start, end));
+ipcMain.handle('sales:get', (_, range) => db.getSales(range?.start, range?.end));
+ipcMain.handle('sales:getDetails', (_, id) => db.getSaleDetails(id));
 
 // ✅ Clear all sales totals
 ipcMain.handle('sales:clear', () => db.clearSales());
 
+// Purchases
+ipcMain.handle('purchases:add', (_, purchase) => db.addPurchase(purchase));
+ipcMain.handle('purchases:get', (_, query) => db.getPurchases(query));
+ipcMain.handle('purchases:getDetails', (_, id) => db.getPurchaseDetails(id));
+
 // Stats
 ipcMain.handle('stats:get', () => db.getStats());
+ipcMain.handle('stats:getDashboard', (_, filter) => db.getDashboardStats(filter?.startDate, filter?.endDate));

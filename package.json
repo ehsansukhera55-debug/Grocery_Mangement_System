@@ -4,7 +4,7 @@
   "description": "Nirala Store — A complete grocery store management system built with Electron and React.",
   "main": "public/electron-main.js",
   "scripts": {
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron ./public/electron-main.js\"",
+    "dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron ./public/electron-main.js\"",
     "build:renderer": "vite build",
     "build": "npm run build:renderer && electron-builder",
     "start": "cross-env NODE_ENV=production electron ./public/electron-main.js"

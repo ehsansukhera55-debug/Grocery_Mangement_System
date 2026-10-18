@@ -16,6 +16,7 @@ export default function Sidebar({ active, onNavigate }) {
       <div className={`nav-item ${active === "products" ? "active" : ""}`} onClick={() => onNavigate("products")}>🧾 Products</div>
       <div className={`nav-item ${active === "customers" ? "active" : ""}`} onClick={() => onNavigate("customers")}>👥 Customers</div>
       <div className={`nav-item ${active === "suppliers" ? "active" : ""}`} onClick={() => onNavigate("suppliers")}>🏷 Suppliers</div>
+      <div className={`nav-item ${active === "purchases" ? "active" : ""}`} onClick={() => onNavigate("purchases")}>🛒 Purchases</div>
       <div className={`nav-item ${active === "sales" ? "active" : ""}`} onClick={() => onNavigate("sales")}>💳 Sales</div>
     </aside>
   );

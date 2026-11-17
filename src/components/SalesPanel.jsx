@@ -10,6 +10,7 @@ export default function SalesPanel({ isActiveView = true }) {
       id: 'session-1',
       sessionNumber: 1,
       customer: null, // null = Walk-in Customer
+      pricingTier: 'retail', // 'retail' or 'wholesale'
       cart: [],
       isHeld: false
     }
@@ -48,6 +49,34 @@ export default function SalesPanel({ isActiveView = true }) {
     );
   }
 
+  async function togglePricingTier(newTier) {
+    const curId = activeSessionIdRef.current;
+    let prods = products;
+    try {
+      const fresh = await fetchProducts();
+      if (fresh && fresh.length > 0) {
+        prods = fresh;
+      }
+    } catch (_) {}
+
+    setSessions(prevSessions =>
+      prevSessions.map(s => {
+        if (s.id !== curId) return s;
+        // Recalculate unit price for all items in the active cart
+        const updatedCart = (s.cart || []).map(item => {
+          const prod = prods.find(p => p.id === item.product_id);
+          if (!prod) return item;
+          const unit_price = newTier === 'wholesale'
+            ? (Number(prod.wholesale_price) > 0 ? Number(prod.wholesale_price) : Number(prod.price || 0))
+            : Number(prod.price || 0);
+          return { ...item, unit_price };
+        });
+        return { ...s, pricingTier: newTier, cart: updatedCart };
+      })
+    );
+    restoreFocusToScan(40);
+  }
+
   // Session Management handlers
   function handleCreateNewSale() {
     if (sessions.length >= 10) {
@@ -60,6 +89,7 @@ export default function SalesPanel({ isActiveView = true }) {
       id: newId,
       sessionNumber: newNum,
       customer: null,
+      pricingTier: 'retail',
       cart: [],
       isHeld: false
     };
@@ -121,6 +151,7 @@ export default function SalesPanel({ isActiveView = true }) {
           id: newId,
           sessionNumber: newNum,
           customer: null,
+          pricingTier: 'retail',
           cart: [],
           isHeld: false
         };
@@ -150,7 +181,8 @@ export default function SalesPanel({ isActiveView = true }) {
     phone: '',
     email: '',
     address: '',
-    notes: ''
+    notes: '',
+    customer_type: 'retail'
   });
   const [newCustomerError, setNewCustomerError] = useState('');
   const [savingNewCustomer, setSavingNewCustomer] = useState(false);
@@ -183,9 +215,12 @@ export default function SalesPanel({ isActiveView = true }) {
     }, 3000);
   }
 
+  const quickCustNameInputRef = useRef(null);
+
   function restoreFocusToScan(delay = 50) {
+    if (!isActiveView) return;
     setTimeout(() => {
-      try { window.focus(); } catch (_) {}
+      if (!isActiveView) return;
       try {
         scanInputRef.current?.focus?.();
       } catch (e) {
@@ -194,9 +229,11 @@ export default function SalesPanel({ isActiveView = true }) {
     }, delay);
   }
 
-  // Focus scan input whenever the user navigates into the Sales tab in App.jsx
+  // Whenever the user navigates into the Sales tab in App.jsx, re-fetch products & customers and restore focus
   useEffect(() => {
     if (isActiveView) {
+      fetchProducts();
+      fetchCustomers();
       restoreFocusToScan(60);
     }
   }, [isActiveView]);
@@ -220,7 +257,15 @@ export default function SalesPanel({ isActiveView = true }) {
   // Focus scan input when quick add customer modal closes
   const prevCustModalRef = useRef(addCustomerModalOpen);
   useEffect(() => {
-    if (prevCustModalRef.current && !addCustomerModalOpen) {
+    if (addCustomerModalOpen) {
+      if (document.activeElement && document.activeElement !== quickCustNameInputRef.current) {
+        try { document.activeElement.blur(); } catch (_) {}
+      }
+      const t = setTimeout(() => {
+        try { quickCustNameInputRef.current?.focus?.(); } catch (_) {}
+      }, 50);
+      return () => clearTimeout(t);
+    } else if (prevCustModalRef.current && !addCustomerModalOpen) {
       restoreFocusToScan(50);
     }
     prevCustModalRef.current = addCustomerModalOpen;
@@ -229,7 +274,9 @@ export default function SalesPanel({ isActiveView = true }) {
   useEffect(() => {
     fetchProducts();
     fetchCustomers();
-    restoreFocusToScan(100);
+    if (isActiveView) {
+      restoreFocusToScan(100);
+    }
 
     function handleClickOutside(e) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -242,27 +289,46 @@ export default function SalesPanel({ isActiveView = true }) {
 
   function fetchProducts() {
     if (window.api?.products?.get) {
-      window.api.products.get().then(setProducts).catch(console.error);
+      return window.api.products.get().then(data => {
+        setProducts(data || []);
+        return data || [];
+      }).catch(err => {
+        console.error('Error fetching products', err);
+        return [];
+      });
     }
+    return Promise.resolve([]);
   }
 
   function fetchCustomers() {
     if (window.api?.customers?.get) {
-      window.api.customers.get({ includeInactive: false })
-        .then(data => setCustomers(data || []))
-        .catch(console.error);
+      return window.api.customers.get({ includeInactive: false })
+        .then(data => {
+          setCustomers(data || []);
+          return data || [];
+        })
+        .catch(err => {
+          console.error('Error fetching customers', err);
+          return [];
+        });
     }
+    return Promise.resolve([]);
   }
 
   function addToCart(prodId, qty = 1) {
     const p = products.find(x => x.id === prodId);
     if (!p) return;
+    const tier = activeSession?.pricingTier || 'retail';
+    const effectivePrice = tier === 'wholesale'
+      ? (Number(p.wholesale_price) > 0 ? Number(p.wholesale_price) : Number(p.price || 0))
+      : Number(p.price || 0);
+
     setCart(prev => {
       const found = prev.find(c => c.product_id === prodId);
       if (found) {
         return prev.map(c => c.product_id === prodId ? { ...c, quantity: c.quantity + qty } : c);
       } else {
-        return [...prev, { product_id: prodId, name: p.name, quantity: qty, unit_price: Number(p.price || 0) }];
+        return [...prev, { product_id: prodId, name: p.name, quantity: qty, unit_price: effectivePrice }];
       }
     });
   }
@@ -334,7 +400,9 @@ export default function SalesPanel({ isActiveView = true }) {
           Customer: ${selectedCustomer ? selectedCustomer.name : 'Walk-in Customer'}
         </div>
         ${selectedCustomer && selectedCustomer.phone ? `<div>Phone: ${selectedCustomer.phone}</div>` : ''}
-
+        <div>
+          Pricing: ${activeSession?.pricingTier === 'wholesale' ? 'Wholesale' : 'Retail'}
+        </div>
         <div>
           Date: ${new Date().toLocaleString()}
         </div>
@@ -386,6 +454,7 @@ export default function SalesPanel({ isActiveView = true }) {
       customer_name: selectedCustomer ? selectedCustomer.name : 'Walk-in Customer',
       date: new Date().toISOString(),
       total_amount: Number(total() || 0),
+      pricing_tier: activeSession?.pricingTier || 'retail',
       items: cart.map(i => ({
         product_id: i.product_id,
         quantity: Number(i.quantity || 0),
@@ -399,7 +468,8 @@ export default function SalesPanel({ isActiveView = true }) {
       // Remove completed sale session and switch to next available (or create a fresh one)
       closeSession(activeSessionId);
 
-      // refresh stats (best-effort)
+      // refresh products and stats (best-effort)
+      fetchProducts();
       try { await window.api.stats.get(); } catch (_) {}
 
       showToast(`Sale #${saleId} saved successfully`, 'success');
@@ -407,7 +477,10 @@ export default function SalesPanel({ isActiveView = true }) {
 
     } catch (err) {
       console.error('Error saving sale', err);
-      showToast('Error saving sale', 'error');
+      const cleanMsg = err.message
+        ? err.message.replace(/^Error invoking remote method '[^']+':\s*/i, '').replace(/^SqliteError:\s*/i, '')
+        : 'Error saving sale';
+      showToast(cleanMsg, 'error');
       restoreFocusToScan(60);
     }
   }
@@ -474,9 +547,12 @@ export default function SalesPanel({ isActiveView = true }) {
       await fetchCustomers();
       // Automatically select the new customer for this sale
       setSelectedCustomer(created);
+      if (created?.customer_type === 'wholesale') {
+        togglePricingTier('wholesale');
+      }
       // Close modal and reset form
       setAddCustomerModalOpen(false);
-      setNewCustomerForm({ name: '', phone: '', email: '', address: '', notes: '' });
+      setNewCustomerForm({ name: '', phone: '', email: '', address: '', notes: '', customer_type: 'retail' });
       showToast(`Customer "${created.name}" created and selected!`, 'success');
       // DO NOT touch or clear the current cart!
       restoreFocusToScan(60);
@@ -656,7 +732,7 @@ export default function SalesPanel({ isActiveView = true }) {
                     )}
                   </div>
                   <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
-                    {itemCount} {itemCount === 1 ? 'item' : 'items'} • Rs {saleTotal.toFixed(0)}
+                    {itemCount} {itemCount === 1 ? 'item' : 'items'} • Rs {saleTotal.toFixed(0)} • {s.pricingTier === 'wholesale' ? '📦 Wholesale' : '🛍️ Retail'}
                   </div>
                 </div>
 
@@ -717,21 +793,38 @@ export default function SalesPanel({ isActiveView = true }) {
             value={query}
             onChange={handleScanChange}
             onKeyDown={handleScanKeyDown}
+            disabled={!isActiveView || addCustomerModalOpen || cancelModal.show}
+            tabIndex={!isActiveView ? -1 : 0}
             style={{ width: '100%', padding: 8, marginBottom: 8, borderRadius: 6, border: '1px solid #ddd' }}
-            autoFocus
           />
 
           <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
-            {filteredProducts.map(p => (
-              <div key={p.id} style={{ padding: 8, border: '1px solid #eef3fb', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ fontWeight: 600 }}>{p.name}</div>
-                <div style={{ fontSize: 12, color: '#6b7280' }}>{p.category || '—'}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                  <div style={{ fontWeight: 700 }}>Rs {Number(p.price || 0).toFixed(2)}</div>
-                  <button className="btn" onClick={() => addToCart(p.id, 1)}>Add</button>
+            {filteredProducts.map(p => {
+              const isWholesale = activeSession?.pricingTier === 'wholesale';
+              const effectivePrice = isWholesale
+                ? (Number(p.wholesale_price) > 0 ? Number(p.wholesale_price) : Number(p.price || 0))
+                : Number(p.price || 0);
+
+              return (
+                <div key={p.id} style={{ padding: 8, border: '1px solid #eef3fb', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ fontWeight: 600 }}>{p.name}</div>
+                  <div style={{ fontSize: 12, color: '#6b7280' }}>{p.category || '—'}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, color: isWholesale ? '#7c3aed' : '#111827' }}>
+                        Rs {effectivePrice.toFixed(2)}
+                      </div>
+                      {isWholesale && (
+                        <div style={{ fontSize: 10, color: Number(p.wholesale_price) > 0 ? '#7c3aed' : '#9ca3af', fontWeight: 600 }}>
+                          {Number(p.wholesale_price) > 0 ? '📦 Wholesale' : 'Retail price (no W.S)'}
+                        </div>
+                      )}
+                    </div>
+                    <button className="btn" onClick={() => addToCart(p.id, 1)}>Add</button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -770,10 +863,21 @@ export default function SalesPanel({ isActiveView = true }) {
                 }}
               >
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: '#1e40af' }}>
-                    👤 {selectedCustomer.name}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: '#1e40af' }}>
+                      👤 {selectedCustomer.name}
+                    </span>
+                    {selectedCustomer.customer_type === 'wholesale' ? (
+                      <span style={{ fontSize: 10, fontWeight: 700, background: '#f5f3ff', color: '#7c3aed', border: '1px solid #ddd6fe', padding: '1px 6px', borderRadius: 8 }}>
+                        📦 Wholesale
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 10, fontWeight: 600, background: '#dbeafe', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '1px 6px', borderRadius: 8 }}>
+                        🛍️ Retail
+                      </span>
+                    )}
                   </div>
-                  <div style={{ fontSize: 11, color: '#3b82f6' }}>
+                  <div style={{ fontSize: 11, color: '#3b82f6', marginTop: 2 }}>
                     {selectedCustomer.phone ? `📞 ${selectedCustomer.phone}` : 'No phone number'}
                   </div>
                 </div>
@@ -835,8 +939,8 @@ export default function SalesPanel({ isActiveView = true }) {
                         placeholder="Search by name or phone..."
                         value={customerSearchQuery}
                         onChange={e => setCustomerSearchQuery(e.target.value)}
+                        onFocus={e => e.target.select?.()}
                         style={{ width: '100%', padding: 6, borderRadius: 4, border: '1px solid #ddd', fontSize: 12 }}
-                        autoFocus
                       />
                     </div>
                     <div
@@ -870,9 +974,24 @@ export default function SalesPanel({ isActiveView = true }) {
                           setSelectedCustomer(c);
                           setCustomerDropdownOpen(false);
                           setCustomerSearchQuery('');
+                          if (c.customer_type === 'wholesale') {
+                            togglePricingTier('wholesale');
+                            showToast(`Wholesale customer selected: Pricing switched to Wholesale`, 'info');
+                          }
                         }}
                       >
-                        <div style={{ fontWeight: 600, color: '#111827' }}>{c.name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontWeight: 600, color: '#111827' }}>{c.name}</span>
+                          {c.customer_type === 'wholesale' ? (
+                            <span style={{ fontSize: 10, fontWeight: 700, background: '#f5f3ff', color: '#7c3aed', border: '1px solid #ddd6fe', padding: '1px 6px', borderRadius: 8 }}>
+                              📦 Wholesale
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 10, fontWeight: 600, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '1px 6px', borderRadius: 8 }}>
+                              🛍️ Retail
+                            </span>
+                          )}
+                        </div>
                         <div style={{ fontSize: 11, color: '#6b7280' }}>
                           {c.phone || c.email || 'Registered customer'}
                         </div>
@@ -887,6 +1006,61 @@ export default function SalesPanel({ isActiveView = true }) {
                 )}
               </div>
             )}
+          </div>
+
+          {/* Pricing Tier Selector (Retail vs Wholesale) */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '6px 10px',
+              marginBottom: 12,
+              background: activeSession?.pricingTier === 'wholesale' ? '#faf5ff' : '#f8fafc',
+              borderRadius: 6,
+              border: activeSession?.pricingTier === 'wholesale' ? '1px solid #e9d5ff' : '1px solid #e2e8f0'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 13 }}>{activeSession?.pricingTier === 'wholesale' ? '📦' : '🏷️'}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: activeSession?.pricingTier === 'wholesale' ? '#6b21a8' : '#334155' }}>
+                Pricing: {activeSession?.pricingTier === 'wholesale' ? 'Wholesale' : 'Retail'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  padding: '3px 10px',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: activeSession?.pricingTier !== 'wholesale' ? '#2563eb' : '#f1f5f9',
+                  color: activeSession?.pricingTier !== 'wholesale' ? '#fff' : '#475569',
+                  border: activeSession?.pricingTier !== 'wholesale' ? 'none' : '1px solid #cbd5e1'
+                }}
+                onClick={() => togglePricingTier('retail')}
+                title="Sell at regular Retail prices"
+              >
+                🛍️ Retail
+              </button>
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  padding: '3px 10px',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: activeSession?.pricingTier === 'wholesale' ? '#7c3aed' : '#f1f5f9',
+                  color: activeSession?.pricingTier === 'wholesale' ? '#fff' : '#475569',
+                  border: activeSession?.pricingTier === 'wholesale' ? 'none' : '1px solid #cbd5e1'
+                }}
+                onClick={() => togglePricingTier('wholesale')}
+                title="Sell at bulk Wholesale prices"
+              >
+                📦 Wholesale
+              </button>
+            </div>
           </div>
 
           {/* Cart items */}
@@ -959,6 +1133,7 @@ export default function SalesPanel({ isActiveView = true }) {
       {/* Modal: Add Customer Directly from Sales */}
       {addCustomerModalOpen && (
         <div
+          className="modal-backdrop no-drag"
           style={{
             position: 'fixed',
             top: 0,
@@ -969,13 +1144,14 @@ export default function SalesPanel({ isActiveView = true }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 10000
+            zIndex: 10000,
+            pointerEvents: 'auto'
           }}
           onClick={() => setAddCustomerModalOpen(false)}
         >
           <div
-            className="card"
-            style={{ width: 420, maxWidth: '90%', padding: 24, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}
+            className="card no-drag"
+            style={{ width: 420, maxWidth: '90%', padding: 24, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', pointerEvents: 'auto' }}
             onClick={e => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
@@ -1002,13 +1178,14 @@ export default function SalesPanel({ isActiveView = true }) {
                     Customer Name *
                   </label>
                   <input
+                    ref={quickCustNameInputRef}
                     className="no-drag"
                     required
                     placeholder="e.g. Ali Raza"
                     value={newCustomerForm.name}
                     onChange={e => setNewCustomerForm({ ...newCustomerForm, name: e.target.value })}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
-                    autoFocus
                   />
                 </div>
 
@@ -1021,6 +1198,7 @@ export default function SalesPanel({ isActiveView = true }) {
                     placeholder="e.g. 03001234567"
                     value={newCustomerForm.phone}
                     onChange={e => setNewCustomerForm({ ...newCustomerForm, phone: e.target.value })}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                   />
                 </div>
@@ -1035,6 +1213,7 @@ export default function SalesPanel({ isActiveView = true }) {
                     placeholder="e.g. ali@example.com"
                     value={newCustomerForm.email}
                     onChange={e => setNewCustomerForm({ ...newCustomerForm, email: e.target.value })}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                   />
                 </div>
@@ -1050,6 +1229,21 @@ export default function SalesPanel({ isActiveView = true }) {
                     onChange={e => setNewCustomerForm({ ...newCustomerForm, address: e.target.value })}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                   />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>
+                    Customer Type
+                  </label>
+                  <select
+                    className="no-drag"
+                    value={newCustomerForm.customer_type || 'retail'}
+                    onChange={e => setNewCustomerForm({ ...newCustomerForm, customer_type: e.target.value })}
+                    style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db', background: '#fff' }}
+                  >
+                    <option value="retail">🛍️ Retail Customer</option>
+                    <option value="wholesale">📦 Wholesale Customer</option>
+                  </select>
                 </div>
 
                 <div>

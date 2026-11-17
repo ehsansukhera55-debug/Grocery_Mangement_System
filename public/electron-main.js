@@ -1,8 +1,56 @@
 // public/electron-main.js
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const db = require('./db-main'); // Database handler
+
+function createMenu() {
+  const template = [
+    {
+      label: 'File',
+      submenu: [
+        { role: 'quit' }
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { role: 'close' }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -15,7 +63,12 @@ function createWindow() {
     },
   });
 
-  const isDev = Boolean(process.env.VITE_DEV_SERVER_URL) || !app.isPackaged;
+  win.once('ready-to-show', () => {
+    win.show();
+    win.focus();
+  });
+
+  const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
   const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://127.0.0.1:5173';
   const prodIndex = path.join(__dirname, '../dist/index.html');
 
@@ -36,6 +89,7 @@ function createWindow() {
 
 // App ready
 app.whenReady().then(() => {
+  createMenu();
   createWindow();
 
   app.on('activate', () => {
@@ -78,7 +132,7 @@ ipcMain.handle('suppliers:toggleActive', (_, { id, isActive }) => db.toggleSuppl
 
 // Sales
 ipcMain.handle('sales:add', (_, sale) => db.addSale(sale));
-ipcMain.handle('sales:get', (_, range) => db.getSales(range?.start, range?.end));
+ipcMain.handle('sales:get', (_, range) => db.getSales(range));
 ipcMain.handle('sales:getDetails', (_, id) => db.getSaleDetails(id));
 
 // ✅ Clear all sales totals

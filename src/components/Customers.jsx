@@ -16,7 +16,8 @@ export default function Customers() {
     phone: '',
     email: '',
     address: '',
-    notes: ''
+    notes: '',
+    customer_type: 'retail'
   });
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -34,6 +35,7 @@ export default function Customers() {
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
   const searchTimeoutRef = useRef(null);
+  const nameInputRef = useRef(null);
 
   function showToast(message, type = 'success') {
     setToast({ show: true, message, type });
@@ -45,6 +47,22 @@ export default function Customers() {
   useEffect(() => {
     loadCustomers();
   }, [filterActiveOnly]);
+
+  // Safe programmatic focus when Add/Edit Customer modal opens
+  useEffect(() => {
+    if (modalOpen) {
+      if (document.activeElement && document.activeElement !== nameInputRef.current) {
+        try { document.activeElement.blur(); } catch (_) {}
+      }
+      const timer = setTimeout(() => {
+        try {
+          nameInputRef.current?.focus?.();
+          nameInputRef.current?.select?.();
+        } catch (_) {}
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [modalOpen]);
 
   function loadCustomers(query = searchQuery) {
     if (!window.api?.customers?.get) return;
@@ -75,6 +93,9 @@ export default function Customers() {
   }
 
   function openAddModal() {
+    if (document.activeElement?.blur) {
+      try { document.activeElement.blur(); } catch (_) {}
+    }
     setModalMode('add');
     setFormData({
       id: null,
@@ -82,13 +103,17 @@ export default function Customers() {
       phone: '',
       email: '',
       address: '',
-      notes: ''
+      notes: '',
+      customer_type: 'retail'
     });
     setFormError('');
     setModalOpen(true);
   }
 
   function openEditModal(c) {
+    if (document.activeElement?.blur) {
+      try { document.activeElement.blur(); } catch (_) {}
+    }
     setModalMode('edit');
     setFormData({
       id: c.id,
@@ -96,7 +121,8 @@ export default function Customers() {
       phone: c.phone || '',
       email: c.email || '',
       address: c.address || '',
-      notes: c.notes || ''
+      notes: c.notes || '',
+      customer_type: c.customer_type || 'retail'
     });
     setFormError('');
     setModalOpen(true);
@@ -210,6 +236,7 @@ export default function Customers() {
         <div>Invoice: #${sale.id}</div>
         <div>Customer: ${sale.customer_name || 'Walk-in Customer'}</div>
         ${sale.customer_phone ? `<div>Phone: ${sale.customer_phone}</div>` : ''}
+        <div>Pricing: ${sale.pricing_tier === 'wholesale' ? 'Wholesale' : 'Retail'}</div>
         <div>Date: ${new Date(sale.date).toLocaleString()}</div>
         <hr>
         <table>
@@ -288,6 +315,8 @@ export default function Customers() {
                 placeholder="Search by customer name, phone, or email..."
                 value={searchQuery}
                 onChange={handleSearchChange}
+                disabled={modalOpen || !!inspectSale}
+                onFocus={e => e.target.select?.()}
                 style={{
                   width: '100%',
                   padding: '9px 12px',
@@ -348,7 +377,38 @@ export default function Customers() {
                         onClick={() => viewCustomerDetails(c)}
                       >
                         <td>
-                          <div style={{ fontWeight: 600, color: '#111827' }}>{c.name}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontWeight: 600, color: '#111827' }}>{c.name}</span>
+                            {c.customer_type === 'wholesale' ? (
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  background: '#f5f3ff',
+                                  color: '#7c3aed',
+                                  border: '1px solid #ddd6fe',
+                                  padding: '1px 6px',
+                                  borderRadius: 10
+                                }}
+                              >
+                                📦 Wholesale
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  background: '#eff6ff',
+                                  color: '#2563eb',
+                                  border: '1px solid #bfdbfe',
+                                  padding: '1px 6px',
+                                  borderRadius: 10
+                                }}
+                              >
+                                🛍️ Retail
+                              </span>
+                            )}
+                          </div>
                           {c.email && <div style={{ fontSize: 12, color: '#6b7280' }}>{c.email}</div>}
                         </td>
                         <td>{c.phone || <span style={{ color: '#9ca3af' }}>—</span>}</td>
@@ -437,6 +497,12 @@ export default function Customers() {
 
             {/* Profile Overview */}
             <div style={{ padding: '12px 0', borderBottom: '1px solid #f0f2f5', fontSize: 13 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ color: '#6b7280' }}>Customer Type:</span>
+                <span style={{ fontWeight: 600, color: selectedCustomer.customer_type === 'wholesale' ? '#7c3aed' : '#2563eb' }}>
+                  {selectedCustomer.customer_type === 'wholesale' ? '📦 Wholesale Customer' : '🛍️ Retail Customer'}
+                </span>
+              </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                 <span style={{ color: '#6b7280' }}>Phone:</span>
                 <strong>{selectedCustomer.phone || '—'}</strong>
@@ -527,6 +593,7 @@ export default function Customers() {
       {/* Add / Edit Customer Modal */}
       {modalOpen && (
         <div
+          className="modal-backdrop no-drag"
           style={{
             position: 'fixed',
             top: 0,
@@ -537,13 +604,14 @@ export default function Customers() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 9999
+            zIndex: 9999,
+            pointerEvents: 'auto'
           }}
           onClick={() => setModalOpen(false)}
         >
           <div
-            className="card"
-            style={{ width: 440, maxWidth: '90%', padding: 24, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}
+            className="card no-drag"
+            style={{ width: 440, maxWidth: '90%', padding: 24, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', pointerEvents: 'auto' }}
             onClick={e => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -572,13 +640,14 @@ export default function Customers() {
                     Customer Name *
                   </label>
                   <input
+                    ref={nameInputRef}
                     className="no-drag"
                     required
                     placeholder="e.g. Ali Raza"
                     value={formData.name}
                     onChange={e => setFormData({ ...formData, name: e.target.value })}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
-                    autoFocus
                   />
                 </div>
 
@@ -591,6 +660,7 @@ export default function Customers() {
                     placeholder="e.g. 03001234567"
                     value={formData.phone}
                     onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                   />
                 </div>
@@ -605,6 +675,7 @@ export default function Customers() {
                     placeholder="e.g. ali@example.com"
                     value={formData.email}
                     onChange={e => setFormData({ ...formData, email: e.target.value })}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                   />
                 </div>
@@ -618,8 +689,24 @@ export default function Customers() {
                     placeholder="e.g. Street 4, Sector G-9"
                     value={formData.address}
                     onChange={e => setFormData({ ...formData, address: e.target.value })}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                   />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>
+                    Customer Type
+                  </label>
+                  <select
+                    className="no-drag"
+                    value={formData.customer_type || 'retail'}
+                    onChange={e => setFormData({ ...formData, customer_type: e.target.value })}
+                    style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db', background: '#fff' }}
+                  >
+                    <option value="retail">🛍️ Retail Customer (Default)</option>
+                    <option value="wholesale">📦 Wholesale Customer</option>
+                  </select>
                 </div>
 
                 <div>
@@ -695,6 +782,7 @@ export default function Customers() {
             <div style={{ fontSize: 13, margin: '12px 0', color: '#4b5563' }}>
               <div><strong>Customer:</strong> {inspectSale.customer_name || 'Walk-in Customer'}</div>
               {inspectSale.customer_phone && <div><strong>Phone:</strong> {inspectSale.customer_phone}</div>}
+              <div><strong>Pricing:</strong> {inspectSale.pricing_tier === 'wholesale' ? '📦 Wholesale' : '🛍️ Retail'}</div>
               <div><strong>Date:</strong> {new Date(inspectSale.date).toLocaleString()}</div>
             </div>
 

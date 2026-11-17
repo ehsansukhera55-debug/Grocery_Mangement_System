@@ -21,6 +21,7 @@ export default function ProductList() {
     supplier_id: '',
     price: '',
     purchase_price: '',
+    wholesale_price: '',
     stock_qty: '',
     reorder_level: ''
   });
@@ -37,6 +38,7 @@ export default function ProductList() {
 
   const nameInputRef = useRef(null);
   const scanInputRef = useRef(null);
+  const quickSupplierInputRef = useRef(null);
   const scanTimeoutRef = useRef(null);
   const lastScanTimeRef = useRef(0);
 
@@ -50,7 +52,11 @@ export default function ProductList() {
   useEffect(() => {
     fetchProducts();
     fetchSuppliers();
-    setTimeout(() => scanInputRef.current?.focus(), 120);
+    setTimeout(() => {
+      if (!modalOpen) {
+        try { scanInputRef.current?.focus?.(); } catch (_) {}
+      }
+    }, 120);
   }, []);
 
   function fetchProducts() {
@@ -76,7 +82,6 @@ export default function ProductList() {
   function restoreFocus(elRef, delay = 50) {
     setTimeout(() => {
       try {
-        window.focus();
         elRef?.current?.focus?.();
       } catch (err) {
         console.error(err);
@@ -93,8 +98,43 @@ export default function ProductList() {
     prevModalOpenRef.current = modalOpen;
   }, [modalOpen]);
 
+  // Safe programmatic focus when Add/Edit Product modal opens
+  useEffect(() => {
+    if (modalOpen) {
+      if (document.activeElement && document.activeElement !== nameInputRef.current) {
+        try { document.activeElement.blur(); } catch (_) {}
+      }
+      const timer = setTimeout(() => {
+        try {
+          nameInputRef.current?.focus?.();
+          nameInputRef.current?.select?.();
+        } catch (_) {}
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [modalOpen]);
+
+  // Safe programmatic focus when Quick Add Supplier modal opens
+  useEffect(() => {
+    if (quickSupplierModalOpen) {
+      if (document.activeElement && document.activeElement !== quickSupplierInputRef.current) {
+        try { document.activeElement.blur(); } catch (_) {}
+      }
+      const timer = setTimeout(() => {
+        try {
+          quickSupplierInputRef.current?.focus?.();
+          quickSupplierInputRef.current?.select?.();
+        } catch (_) {}
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [quickSupplierModalOpen]);
+
   // Open Add Product Modal
   function openAddModal(initialSku = '') {
+    if (document.activeElement?.blur) {
+      try { document.activeElement.blur(); } catch (_) {}
+    }
     setModalMode('add');
     setForm({
       id: null,
@@ -104,16 +144,19 @@ export default function ProductList() {
       supplier_id: '',
       price: '',
       purchase_price: '',
+      wholesale_price: '',
       stock_qty: '',
       reorder_level: ''
     });
     setFormError('');
     setModalOpen(true);
-    setTimeout(() => nameInputRef.current?.focus(), 120);
   }
 
   // Open Edit Product Modal
   function openEditModal(p) {
+    if (document.activeElement?.blur) {
+      try { document.activeElement.blur(); } catch (_) {}
+    }
     setModalMode('edit');
     setForm({
       id: p.id,
@@ -123,12 +166,12 @@ export default function ProductList() {
       supplier_id: p.supplier_id ? String(p.supplier_id) : '',
       price: (p.price !== undefined && p.price !== null) ? String(p.price) : '',
       purchase_price: (p.purchase_price !== undefined && p.purchase_price !== null) ? String(p.purchase_price) : '',
+      wholesale_price: (p.wholesale_price !== undefined && p.wholesale_price !== null) ? String(p.wholesale_price) : '',
       stock_qty: (p.stock_qty !== undefined && p.stock_qty !== null) ? String(p.stock_qty) : '',
       reorder_level: (p.reorder_level !== undefined && p.reorder_level !== null) ? String(p.reorder_level) : ''
     });
     setFormError('');
     setModalOpen(true);
-    setTimeout(() => nameInputRef.current?.focus(), 120);
   }
 
   // --- Scan handling (auto-search without Enter) ---
@@ -200,6 +243,7 @@ export default function ProductList() {
       supplier_id: form.supplier_id ? parseInt(form.supplier_id) : null,
       price: parseFloat(form.price) || 0,
       purchase_price: parseFloat(form.purchase_price) || 0,
+      wholesale_price: parseFloat(form.wholesale_price) || 0,
       stock_qty: parseInt(form.stock_qty) || 0,
       reorder_level: parseInt(form.reorder_level) || 0
     };
@@ -217,7 +261,11 @@ export default function ProductList() {
       restoreFocus(scanInputRef, 60);
     } catch (err) {
       console.error('Save error', err);
-      setFormError(err.message || 'Error saving product');
+      const rawMsg = err.message || 'Error saving product';
+      const cleanMsg = rawMsg
+        .replace(/^Error invoking remote method '[^']+':\s*/i, '')
+        .replace(/^SqliteError:\s*/i, '');
+      setFormError(cleanMsg);
     } finally {
       setSaving(false);
     }
@@ -328,8 +376,10 @@ export default function ProductList() {
             value={query}
             onChange={handleScanChange}
             onKeyDown={handleScanKeyDown}
+            disabled={modalOpen || quickSupplierModalOpen}
+            tabIndex={modalOpen || quickSupplierModalOpen ? -1 : 0}
+            onFocus={e => e.target.select?.()}
             style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
-            autoFocus
           />
         </div>
 
@@ -340,14 +390,16 @@ export default function ProductList() {
               <th>Category</th>
               <th>Supplier</th>
               <th>Stock</th>
-              <th>Price</th>
+              <th>Purchase Cost</th>
+              <th>Wholesale Price</th>
+              <th>Retail Price</th>
               <th style={{ textAlign: 'center' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan="6" style={{ textAlign: 'center', padding: 24, color: '#9ca3af' }}>
+                <td colSpan="8" style={{ textAlign: 'center', padding: 24, color: '#9ca3af' }}>
                   {query ? 'No products matching your search' : 'No products in catalog. Click "+ Add Product" to create one.'}
                 </td>
               </tr>
@@ -391,7 +443,15 @@ export default function ProductList() {
                       </span>
                     )}
                   </td>
-                  <td style={{ fontWeight: 600 }}>Rs {Number(p.price || 0).toFixed(2)}</td>
+                  <td style={{ fontWeight: 500, color: '#4b5563' }}>
+                    Rs {Number(p.purchase_price || 0).toFixed(2)}
+                  </td>
+                  <td style={{ fontWeight: 500, color: p.wholesale_price ? '#1d4ed8' : '#9ca3af' }}>
+                    {p.wholesale_price ? `Rs ${Number(p.wholesale_price).toFixed(2)}` : '—'}
+                  </td>
+                  <td style={{ fontWeight: 600, color: '#111827' }}>
+                    Rs {Number(p.price || 0).toFixed(2)}
+                  </td>
                   <td style={{ textAlign: 'center' }}>
                     <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
                       <button
@@ -422,6 +482,7 @@ export default function ProductList() {
       {/* Add / Edit Product Modal */}
       {modalOpen && (
         <div
+          className="modal-backdrop no-drag"
           style={{
             position: 'fixed',
             top: 0,
@@ -432,19 +493,21 @@ export default function ProductList() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 9999
+            zIndex: 9999,
+            pointerEvents: 'auto'
           }}
           onClick={() => setModalOpen(false)}
         >
           <div
-            className="card"
+            className="card no-drag"
             style={{
               width: 520,
               maxWidth: '92%',
               maxHeight: '90vh',
               overflowY: 'auto',
               padding: 24,
-              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'
+              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)',
+              pointerEvents: 'auto'
             }}
             onClick={e => e.stopPropagation()}
           >
@@ -482,8 +545,8 @@ export default function ProductList() {
                     placeholder="e.g. Olpers Milk 1L"
                     value={form.name}
                     onChange={e => setForm({ ...form, name: e.target.value })}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
-                    autoFocus
                   />
                 </div>
 
@@ -498,6 +561,7 @@ export default function ProductList() {
                       placeholder="e.g. 896400012345"
                       value={form.sku}
                       onChange={e => setForm({ ...form, sku: e.target.value })}
+                      onFocus={e => e.target.select?.()}
                       style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                     />
                   </div>
@@ -510,6 +574,7 @@ export default function ProductList() {
                       placeholder="e.g. Dairy, Beverages"
                       value={form.category}
                       onChange={e => setForm({ ...form, category: e.target.value })}
+                      onFocus={e => e.target.select?.()}
                       style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                     />
                   </div>
@@ -556,35 +621,65 @@ export default function ProductList() {
                   </div>
                 </div>
 
-                {/* 2-Column: Selling Price & Purchase Price */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {/* 3-Column: Retail Price, Wholesale Price, and Purchase Price */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                   <div>
                     <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>
-                      Selling Price (Rs)
+                      Retail Price (Rs) *
                     </label>
                     <input
                       className="no-drag"
                       placeholder="0.00"
-                      type="number"
-                      step="any"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
                       value={form.price}
-                      onChange={e => setForm({ ...form, price: e.target.value })}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                          setForm({ ...form, price: val });
+                        }
+                      }}
+                      onFocus={e => e.target.select?.()}
                       style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>
-                      Purchase Price / Cost (Rs)
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#1d4ed8', display: 'block', marginBottom: 4 }}>
+                      Wholesale Price (Rs)
                     </label>
                     <input
                       className="no-drag"
                       placeholder="0.00"
-                      type="number"
-                      step="any"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
+                      value={form.wholesale_price}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                          setForm({ ...form, wholesale_price: val });
+                        }
+                      }}
+                      onFocus={e => e.target.select?.()}
+                      style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #93c5fd' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>
+                      Purchase Cost (Rs)
+                    </label>
+                    <input
+                      className="no-drag"
+                      placeholder="0.00"
+                      type="text"
+                      inputMode="decimal"
                       value={form.purchase_price}
-                      onChange={e => setForm({ ...form, purchase_price: e.target.value })}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                          setForm({ ...form, purchase_price: val });
+                        }
+                      }}
+                      onFocus={e => e.target.select?.()}
                       style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                     />
                   </div>
@@ -599,9 +694,16 @@ export default function ProductList() {
                     <input
                       className="no-drag"
                       placeholder="0"
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
                       value={form.stock_qty}
-                      onChange={e => setForm({ ...form, stock_qty: e.target.value })}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === '' || /^\d*$/.test(val)) {
+                          setForm({ ...form, stock_qty: val });
+                        }
+                      }}
+                      onFocus={e => e.target.select?.()}
                       style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                     />
                   </div>
@@ -612,9 +714,16 @@ export default function ProductList() {
                     <input
                       className="no-drag"
                       placeholder="0"
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
                       value={form.reorder_level}
-                      onChange={e => setForm({ ...form, reorder_level: e.target.value })}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === '' || /^\d*$/.test(val)) {
+                          setForm({ ...form, reorder_level: val });
+                        }
+                      }}
+                      onFocus={e => e.target.select?.()}
                       style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                     />
                   </div>
@@ -647,6 +756,7 @@ export default function ProductList() {
       {/* Quick Add Supplier Modal (Nested/Secondary modal) */}
       {quickSupplierModalOpen && (
         <div
+          className="modal-backdrop no-drag"
           style={{
             position: 'fixed',
             top: 0,
@@ -657,13 +767,14 @@ export default function ProductList() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 10000
+            zIndex: 10000,
+            pointerEvents: 'auto'
           }}
           onClick={() => setQuickSupplierModalOpen(false)}
         >
           <div
-            className="card"
-            style={{ width: 380, maxWidth: '90%', padding: 20, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}
+            className="card no-drag"
+            style={{ width: 380, maxWidth: '90%', padding: 20, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)', pointerEvents: 'auto' }}
             onClick={e => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -690,13 +801,14 @@ export default function ProductList() {
                     Company Name *
                   </label>
                   <input
+                    ref={quickSupplierInputRef}
                     className="no-drag"
                     required
                     placeholder="e.g. Nestlé Pakistan"
                     value={quickSupplierName}
                     onChange={e => setQuickSupplierName(e.target.value)}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
-                    autoFocus
                   />
                 </div>
 
@@ -709,6 +821,7 @@ export default function ProductList() {
                     placeholder="e.g. 03001234567"
                     value={quickSupplierPhone}
                     onChange={e => setQuickSupplierPhone(e.target.value)}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                   />
                 </div>

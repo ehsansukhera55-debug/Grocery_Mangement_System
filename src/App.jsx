@@ -7,6 +7,7 @@ import SalesPanel from './components/SalesPanel';
 import Customers from './components/Customers';
 import Suppliers from './components/Suppliers';
 import Purchases from './components/Purchases';
+import SalesHistory from './components/SalesHistory';
 
 export default function App() {
   // state to track which view is active
@@ -25,6 +26,7 @@ export default function App() {
         {view === 'customers' && <Customers />}
         {view === 'suppliers' && <Suppliers />}
         {view === 'purchases' && <Purchases />}
+        {view === 'sales-history' && <SalesHistory onNavigate={setView} />}
         {/* Keep SalesPanel mounted to preserve active multiple sales sessions and carts */}
         <div style={{ display: view === 'sales' ? 'block' : 'none' }}>
           <SalesPanel isActiveView={view === 'sales'} />

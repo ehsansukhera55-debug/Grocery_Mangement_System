@@ -132,8 +132,15 @@ body, html, #root {
 }
 
 /* ===============================================================
-   FIX: INPUTS STOP WORKING IN BUILT EXE (Electron drag issue)
+   FIX: INPUTS & MODAL FOCUS IN PACKAGED APP (Electron drag/focus fix)
    =============================================================== */
+
+/* Universal no-drag: the window uses standard OS titlebar, so NO element should ever drag */
+*,
+*::before,
+*::after {
+  -webkit-app-region: no-drag !important;
+}
 
 input,
 textarea,
@@ -142,6 +149,40 @@ button,
 a,
 label,
 .no-drag {
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto !important;
+}
+
+input,
+textarea,
+select {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+button {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+/* Clear visual focus feedback across all inputs */
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid #2563eb !important;
+  border-color: #2563eb !important;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: #f1f5f9 !important;
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+/* Modal backdrop and card layering */
+.modal-backdrop {
   -webkit-app-region: no-drag !important;
   pointer-events: auto !important;
 }
@@ -158,10 +199,5 @@ label,
 .layout,
 .right-panel {
   -webkit-app-region: no-drag !important;
+  pointer-events: auto !important;
 }
-
-/* OPTIONAL: If you ever add a draggable area, keep only that draggable
-   Example:
-      .titlebar { -webkit-app-region: drag; }
-   and put .no-drag on buttons/inputs inside it.
-*/

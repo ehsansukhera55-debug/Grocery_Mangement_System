@@ -34,6 +34,7 @@ export default function Suppliers() {
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
   const searchTimeoutRef = useRef(null);
+  const nameInputRef = useRef(null);
 
   function showToast(message, type = 'success') {
     setToast({ show: true, message, type });
@@ -45,6 +46,22 @@ export default function Suppliers() {
   useEffect(() => {
     loadSuppliers();
   }, [filterActiveOnly]);
+
+  // Safe programmatic focus when Add/Edit Supplier modal opens
+  useEffect(() => {
+    if (modalOpen) {
+      if (document.activeElement && document.activeElement !== nameInputRef.current) {
+        try { document.activeElement.blur(); } catch (_) {}
+      }
+      const timer = setTimeout(() => {
+        try {
+          nameInputRef.current?.focus?.();
+          nameInputRef.current?.select?.();
+        } catch (_) {}
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [modalOpen]);
 
   function loadSuppliers(query = searchQuery) {
     if (!window.api?.suppliers?.get) return;
@@ -75,6 +92,9 @@ export default function Suppliers() {
   }
 
   function openAddModal() {
+    if (document.activeElement?.blur) {
+      try { document.activeElement.blur(); } catch (_) {}
+    }
     setModalMode('add');
     setFormData({
       id: null,
@@ -90,6 +110,9 @@ export default function Suppliers() {
   }
 
   function openEditModal(s) {
+    if (document.activeElement?.blur) {
+      try { document.activeElement.blur(); } catch (_) {}
+    }
     setModalMode('edit');
     setFormData({
       id: s.id,
@@ -304,6 +327,8 @@ export default function Suppliers() {
                 placeholder="Search by company name, contact person, phone, or email..."
                 value={searchQuery}
                 onChange={handleSearchChange}
+                disabled={modalOpen || deleteNotice.show}
+                onFocus={e => e.target.select?.()}
                 style={{
                   width: '100%',
                   padding: '9px 12px',
@@ -555,6 +580,7 @@ export default function Suppliers() {
       {/* Add / Edit Supplier Modal */}
       {modalOpen && (
         <div
+          className="modal-backdrop no-drag"
           style={{
             position: 'fixed',
             top: 0,
@@ -565,13 +591,14 @@ export default function Suppliers() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 9999
+            zIndex: 9999,
+            pointerEvents: 'auto'
           }}
           onClick={() => setModalOpen(false)}
         >
           <div
-            className="card"
-            style={{ width: 440, maxWidth: '90%', padding: 24, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}
+            className="card no-drag"
+            style={{ width: 440, maxWidth: '90%', padding: 24, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', pointerEvents: 'auto' }}
             onClick={e => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -600,13 +627,14 @@ export default function Suppliers() {
                     Company Name *
                   </label>
                   <input
+                    ref={nameInputRef}
                     className="no-drag"
                     required
                     placeholder="e.g. Nestlé Pakistan"
                     value={formData.name}
                     onChange={e => setFormData({ ...formData, name: e.target.value })}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
-                    autoFocus
                   />
                 </div>
 
@@ -619,6 +647,7 @@ export default function Suppliers() {
                     placeholder="e.g. Ahmed Khan"
                     value={formData.contact}
                     onChange={e => setFormData({ ...formData, contact: e.target.value })}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                   />
                 </div>
@@ -632,6 +661,7 @@ export default function Suppliers() {
                     placeholder="e.g. 03001234567"
                     value={formData.phone}
                     onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                   />
                 </div>
@@ -646,6 +676,7 @@ export default function Suppliers() {
                     placeholder="e.g. sales@nestle.com.pk"
                     value={formData.email}
                     onChange={e => setFormData({ ...formData, email: e.target.value })}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                   />
                 </div>
@@ -659,6 +690,7 @@ export default function Suppliers() {
                     placeholder="e.g. Industrial Area, Lahore"
                     value={formData.address}
                     onChange={e => setFormData({ ...formData, address: e.target.value })}
+                    onFocus={e => e.target.select?.()}
                     style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #d1d5db' }}
                   />
                 </div>

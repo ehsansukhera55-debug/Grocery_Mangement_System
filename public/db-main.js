@@ -120,6 +120,9 @@ function init() {
   if (!prodCols.includes('purchase_price')) {
     db.prepare(`ALTER TABLE products ADD COLUMN purchase_price REAL DEFAULT 0;`).run();
   }
+  if (!prodCols.includes('wholesale_price')) {
+    db.prepare(`ALTER TABLE products ADD COLUMN wholesale_price REAL DEFAULT 0;`).run();
+  }
   if (!prodCols.includes('is_active')) {
     db.prepare(`ALTER TABLE products ADD COLUMN is_active INTEGER DEFAULT 1;`).run();
   }
@@ -134,6 +137,9 @@ function init() {
   }
   if (!custCols.includes('is_active')) {
     db.prepare(`ALTER TABLE customers ADD COLUMN is_active INTEGER DEFAULT 1;`).run();
+  }
+  if (!custCols.includes('customer_type')) {
+    db.prepare(`ALTER TABLE customers ADD COLUMN customer_type TEXT DEFAULT 'retail';`).run();
   }
 
   // Backwards compatibility: ensure columns exist on suppliers
@@ -153,6 +159,15 @@ function init() {
   if (!supCols.includes('is_active')) {
     db.prepare(`ALTER TABLE suppliers ADD COLUMN is_active INTEGER DEFAULT 1;`).run();
   }
+
+  // Backwards compatibility: ensure columns exist on sales
+  const salesCols = db.prepare(`PRAGMA table_info(sales);`).all().map(c => c.name);
+  if (!salesCols.includes('customer_name')) {
+    db.prepare(`ALTER TABLE sales ADD COLUMN customer_name TEXT;`).run();
+  }
+  if (!salesCols.includes('pricing_tier')) {
+    db.prepare(`ALTER TABLE sales ADD COLUMN pricing_tier TEXT DEFAULT 'retail';`).run();
+  }
 }
 init();
 
@@ -168,16 +183,30 @@ function getProducts() {
 }
 
 function addProduct(p) {
+  const cleanSku = p.sku ? String(p.sku).trim() : null;
+
+  if (cleanSku) {
+    // 1. Check if another ACTIVE product already uses this barcode/SKU
+    const activeProd = db.prepare('SELECT id, name FROM products WHERE sku = ? AND is_active = 1').get(cleanSku);
+    if (activeProd) {
+      throw new Error(`A product with Barcode / SKU "${cleanSku}" already exists (${activeProd.name}).`);
+    }
+
+    // 2. If a soft-deleted / inactive product has this SKU, free it up so barcode can be reused
+    db.prepare('UPDATE products SET sku = NULL WHERE sku = ? AND is_active = 0').run(cleanSku);
+  }
+
   const stmt = db.prepare(`
-    INSERT INTO products (name, sku, category, price, purchase_price, stock_qty, reorder_level, supplier_id, is_active)
-    VALUES (@name, @sku, @category, @price, @purchase_price, @stock_qty, @reorder_level, @supplier_id, 1)
+    INSERT INTO products (name, sku, category, price, purchase_price, wholesale_price, stock_qty, reorder_level, supplier_id, is_active)
+    VALUES (@name, @sku, @category, @price, @purchase_price, @wholesale_price, @stock_qty, @reorder_level, @supplier_id, 1)
   `);
   const info = stmt.run({
     name: p.name,
-    sku: p.sku || null,
+    sku: cleanSku || null,
     category: p.category || null,
-    price: p.price || 0,
-    purchase_price: p.purchase_price || 0,
+    price: Number(p.price) || 0,
+    purchase_price: Number(p.purchase_price) || 0,
+    wholesale_price: Number(p.wholesale_price) || 0,
     stock_qty: p.stock_qty || 0,
     reorder_level: p.reorder_level || 0,
     supplier_id: p.supplier_id ? Number(p.supplier_id) : null
@@ -186,18 +215,32 @@ function addProduct(p) {
 }
 
 function updateProduct(p) {
+  const cleanSku = p.sku ? String(p.sku).trim() : null;
+
+  if (cleanSku) {
+    // 1. Check if another ACTIVE product already uses this barcode/SKU
+    const activeProd = db.prepare('SELECT id, name FROM products WHERE sku = ? AND id != ? AND is_active = 1').get(cleanSku, p.id);
+    if (activeProd) {
+      throw new Error(`A product with Barcode / SKU "${cleanSku}" already exists (${activeProd.name}).`);
+    }
+
+    // 2. If a soft-deleted / inactive product has this SKU, free it up
+    db.prepare('UPDATE products SET sku = NULL WHERE sku = ? AND id != ? AND is_active = 0').run(cleanSku, p.id);
+  }
+
   const stmt = db.prepare(`
     UPDATE products 
-    SET name=@name, sku=@sku, category=@category, price=@price, purchase_price=@purchase_price, stock_qty=@stock_qty, reorder_level=@reorder_level, supplier_id=@supplier_id 
+    SET name=@name, sku=@sku, category=@category, price=@price, purchase_price=@purchase_price, wholesale_price=@wholesale_price, stock_qty=@stock_qty, reorder_level=@reorder_level, supplier_id=@supplier_id 
     WHERE id=@id AND is_active = 1
   `);
   stmt.run({
     id: p.id,
     name: p.name,
-    sku: p.sku || null,
+    sku: cleanSku || null,
     category: p.category || null,
-    price: p.price || 0,
-    purchase_price: p.purchase_price || 0,
+    price: Number(p.price) || 0,
+    purchase_price: Number(p.purchase_price) || 0,
+    wholesale_price: Number(p.wholesale_price) || 0,
     stock_qty: p.stock_qty || 0,
     reorder_level: p.reorder_level || 0,
     supplier_id: p.supplier_id ? Number(p.supplier_id) : null
@@ -205,9 +248,9 @@ function updateProduct(p) {
   return p;
 }
 
-// Soft delete (mark as inactive)
+// Soft delete (mark as inactive and release SKU so barcode can be reused)
 function deleteProduct(id) {
-  const stmt = db.prepare('UPDATE products SET is_active = 0 WHERE id = ?');
+  const stmt = db.prepare('UPDATE products SET is_active = 0, sku = NULL WHERE id = ?');
   stmt.run(id);
   return { deleted: true };
 }
@@ -286,16 +329,19 @@ function addCustomer(c) {
     }
   }
 
+  const custType = c.customer_type === 'wholesale' ? 'wholesale' : 'retail';
+
   const insertStmt = db.prepare(`
-    INSERT INTO customers (name, phone, email, address, notes, is_active) 
-    VALUES (@name, @phone, @email, @address, @notes, 1)
+    INSERT INTO customers (name, phone, email, address, notes, customer_type, is_active) 
+    VALUES (@name, @phone, @email, @address, @notes, @customer_type, 1)
   `);
   const info = insertStmt.run({
     name: c.name.trim(),
     phone: cleanPhone || null,
     email: (c.email || '').trim() || null,
     address: (c.address || '').trim() || null,
-    notes: (c.notes || '').trim() || null
+    notes: (c.notes || '').trim() || null,
+    customer_type: custType
   });
   return getCustomerById(info.lastInsertRowid);
 }
@@ -312,9 +358,11 @@ function updateCustomer(c) {
     }
   }
 
+  const custType = c.customer_type === 'wholesale' ? 'wholesale' : 'retail';
+
   const updateStmt = db.prepare(`
     UPDATE customers 
-    SET name = @name, phone = @phone, email = @email, address = @address, notes = @notes
+    SET name = @name, phone = @phone, email = @email, address = @address, notes = @notes, customer_type = @customer_type
     WHERE id = @id
   `);
   updateStmt.run({
@@ -323,7 +371,8 @@ function updateCustomer(c) {
     phone: cleanPhone || null,
     email: (c.email || '').trim() || null,
     address: (c.address || '').trim() || null,
-    notes: (c.notes || '').trim() || null
+    notes: (c.notes || '').trim() || null,
+    customer_type: custType
   });
   return getCustomerById(c.id);
 }
@@ -484,18 +533,39 @@ function deleteSupplier(id) {
 
 /* --------------------------- Sales functions --------------------------- */
 function addSale(sale) {
-  const insertSale = db.prepare('INSERT INTO sales (customer_id, customer_name, date, total_amount) VALUES (?,?,?,?)');
+  if (!sale || !sale.items || !Array.isArray(sale.items) || sale.items.length === 0) {
+    throw new Error('Sale must contain at least one product item');
+  }
+
+  let custId = sale.customer_id ? Number(sale.customer_id) : null;
+  if (custId) {
+    const c = db.prepare('SELECT id, name FROM customers WHERE id = ?').get(custId);
+    if (!c) {
+      custId = null; // Prevent foreign key constraint failure if customer was permanently deleted
+    }
+  }
+
+  const custName = (sale.customer_name || 'Walk-in Customer').trim();
+  const saleDate = sale.date || new Date().toISOString();
+  const totalAmount = Number(sale.total_amount || 0);
+  const pricingTier = sale.pricing_tier === 'wholesale' ? 'wholesale' : 'retail';
+
+  const insertSale = db.prepare('INSERT INTO sales (customer_id, customer_name, date, total_amount, pricing_tier) VALUES (?,?,?,?,?)');
   const insertItem = db.prepare('INSERT INTO sales_items (sale_id, product_id, quantity, unit_price) VALUES (?,?,?,?)');
   const updateStock = db.prepare('UPDATE products SET stock_qty = stock_qty - ? WHERE id = ?');
   const insertHistory = db.prepare('INSERT INTO stock_history (product_id, change_qty, note) VALUES (?,?,?)');
 
-  const trx = db.transaction((sale) => {
-    const info = insertSale.run(sale.customer_id || null, sale.customer_name || null, sale.date || new Date().toISOString(), sale.total_amount || 0);
+  const trx = db.transaction((data) => {
+    const info = insertSale.run(custId, custName, saleDate, totalAmount, pricingTier);
     const saleId = info.lastInsertRowid;
-    for (const item of sale.items) {
-      insertItem.run(saleId, item.product_id, item.quantity, item.unit_price);
-      updateStock.run(item.quantity, item.product_id);
-      insertHistory.run(item.product_id, -item.quantity, `Sale #${saleId}`);
+    for (const item of data.items) {
+      const prodId = Number(item.product_id);
+      const qty = Number(item.quantity) || 1;
+      const unitPrice = Number(item.unit_price) || 0;
+
+      insertItem.run(saleId, prodId, qty, unitPrice);
+      updateStock.run(qty, prodId);
+      insertHistory.run(prodId, -qty, `Sale #${saleId}`);
     }
     return saleId;
   });
@@ -503,11 +573,54 @@ function addSale(sale) {
   return trx(sale);
 }
 
-function getSales(start, end) {
-  if (start && end) {
-    return db.prepare('SELECT * FROM sales WHERE date BETWEEN ? AND ? ORDER BY date DESC').all(start, end);
+function getSales(startOrFilter, end) {
+  let start = null;
+  let endDate = null;
+  let search = '';
+
+  if (startOrFilter && typeof startOrFilter === 'object') {
+    start = startOrFilter.start || startOrFilter.startDate || null;
+    endDate = startOrFilter.end || startOrFilter.endDate || null;
+    search = (startOrFilter.search || startOrFilter.customerName || startOrFilter.query || '').trim();
+  } else {
+    start = startOrFilter || null;
+    endDate = end || null;
   }
-  return db.prepare('SELECT * FROM sales ORDER BY date DESC').all();
+
+  let sql = `
+    SELECT s.*,
+           COUNT(si.id) AS items_count,
+           IFNULL(SUM(si.quantity), 0) AS total_quantity
+    FROM sales s
+    LEFT JOIN sales_items si ON si.sale_id = s.id
+  `;
+
+  const conditions = [];
+  const params = [];
+
+  if (start && endDate) {
+    conditions.push(`s.date >= ? AND s.date <= ?`);
+    params.push(start, endDate);
+  } else if (start) {
+    conditions.push(`s.date >= ?`);
+    params.push(start);
+  } else if (endDate) {
+    conditions.push(`s.date <= ?`);
+    params.push(endDate);
+  }
+
+  if (search) {
+    conditions.push(`(s.customer_name LIKE ? OR CAST(s.id AS TEXT) LIKE ? OR s.date LIKE ?)`);
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+  }
+
+  if (conditions.length > 0) {
+    sql += ` WHERE ` + conditions.join(' AND ');
+  }
+
+  sql += ` GROUP BY s.id ORDER BY s.id DESC`;
+
+  return db.prepare(sql).all(...params);
 }
 
 function getSaleDetails(saleId) {
@@ -520,7 +633,9 @@ function getSaleDetails(saleId) {
   if (!sale) return null;
 
   const items = db.prepare(`
-    SELECT si.*, p.name AS product_name, p.sku AS product_sku
+    SELECT si.*, 
+           IFNULL(p.name, 'Item #' || si.product_id) AS product_name, 
+           p.sku AS product_sku
     FROM sales_items si
     LEFT JOIN products p ON p.id = si.product_id
     WHERE si.sale_id = ?

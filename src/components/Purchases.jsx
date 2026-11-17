@@ -76,6 +76,9 @@ export default function Purchases() {
 
   // Open New Purchase Modal
   function handleOpenNewPurchase() {
+    if (document.activeElement?.blur) {
+      try { document.activeElement.blur(); } catch (_) {}
+    }
     setSelectedSupplierId('');
     setPurchaseDate(new Date().toISOString().split('T')[0]);
     setPurchaseNotes('');
@@ -291,6 +294,8 @@ export default function Purchases() {
             placeholder="Search by Purchase # or Supplier name..."
             value={searchQuery}
             onChange={handleSearchChange}
+            disabled={newModalOpen || !!inspectPurchase}
+            onFocus={e => e.target.select?.()}
             style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
           />
         </div>
@@ -368,6 +373,7 @@ export default function Purchases() {
       {/* ============================================================ */}
       {newModalOpen && (
         <div
+          className="modal-backdrop no-drag"
           style={{
             position: 'fixed',
             top: 0,
@@ -378,19 +384,21 @@ export default function Purchases() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 9999
+            zIndex: 9999,
+            pointerEvents: 'auto'
           }}
           onClick={handleCancelNewPurchase}
         >
           <div
-            className="card"
+            className="card no-drag"
             style={{
               width: 720,
               maxWidth: '95%',
               maxHeight: '92vh',
               overflowY: 'auto',
               padding: 24,
-              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)'
+              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)',
+              pointerEvents: 'auto'
             }}
             onClick={e => e.stopPropagation()}
           >
@@ -487,6 +495,7 @@ export default function Purchases() {
                       className="no-drag"
                       value={currentItemQty}
                       onChange={e => setCurrentItemQty(e.target.value)}
+                      onFocus={e => e.target.select?.()}
                       style={{ width: '100%', padding: '7px 8px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
                     />
                   </div>
@@ -503,6 +512,7 @@ export default function Purchases() {
                       className="no-drag"
                       value={currentItemCost}
                       onChange={e => setCurrentItemCost(e.target.value)}
+                      onFocus={e => e.target.select?.()}
                       style={{ width: '100%', padding: '7px 8px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
                     />
                   </div>
